@@ -184,7 +184,41 @@ function pointOnCircle(angle, cx, cy, radius) {
   return { x: cx + Math.cos(angle) * radius, y: cy - Math.sin(angle) * radius };
 }
 
-function drawArrow(context, x, y, dx, dy, color, label) {
+function drawLabel(context, text, x, y, offsetX = 0, offsetY = 0, color = "#f8f1dc") {
+  const labelX = x + offsetX;
+  const labelY = y + offsetY;
+  const lines = String(text).split("\n");
+  context.save();
+  context.font = "800 16px Segoe UI";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  const width = Math.max(...lines.map((line) => context.measureText(line).width)) + 16;
+  const lineHeight = 18;
+  const height = Math.max(24, lines.length * lineHeight + 8);
+  context.fillStyle = "rgba(13, 11, 21, 0.78)";
+  context.strokeStyle = "rgba(248, 241, 220, 0.18)";
+  context.lineWidth = 1;
+  context.beginPath();
+  if (typeof context.roundRect === "function") {
+    context.roundRect(labelX - width / 2, labelY - height / 2, width, height, 6);
+  } else {
+    context.moveTo(labelX - width / 2, labelY - height / 2);
+    context.lineTo(labelX + width / 2, labelY - height / 2);
+    context.lineTo(labelX + width / 2, labelY + height / 2);
+    context.lineTo(labelX - width / 2, labelY + height / 2);
+    context.closePath();
+  }
+  context.fill();
+  context.stroke();
+  context.fillStyle = color;
+  lines.forEach((line, index) => {
+    const yLine = labelY + (index - (lines.length - 1) / 2) * lineHeight;
+    context.fillText(line, labelX, yLine);
+  });
+  context.restore();
+}
+
+function drawArrow(context, x, y, dx, dy, color, label = "") {
   const length = Math.hypot(dx, dy);
   if (length < 2) return;
   const ux = dx / length;
@@ -205,9 +239,13 @@ function drawArrow(context, x, y, dx, dy, color, label) {
   context.lineTo(x + dx - ux * head + uy * head * 0.55, y + dy - uy * head - ux * head * 0.55);
   context.closePath();
   context.fill();
-  context.font = "700 18px Segoe UI";
-  context.fillText(label, x + dx + ux * 10 + 4, y + dy + uy * 10);
   context.restore();
+  if (label) drawLabel(context, label, x + dx, y + dy, ux * 14, uy * 14, color);
+}
+
+function drawVector(context, x, y, dx, dy, color, label, offsetX, offsetY) {
+  drawArrow(context, x, y, dx, dy, color);
+  if (Math.hypot(dx, dy) >= 2) drawLabel(context, label, x + dx, y + dy, offsetX, offsetY, color);
 }
 
 function getToggles() {
@@ -239,64 +277,77 @@ function drawParticleScene() {
   c.arc(cx, cy, 5, 0, TAU);
   c.fill();
 
-  const marks = [[0, "0", "0°"], [Math.PI / 2, "π/2", "90°"], [Math.PI, "π", "180°"], [3 * Math.PI / 2, "3π/2", "270°"], [TAU, "2π", "360°"]];
-  c.font = "700 15px Segoe UI";
-  c.textAlign = "center";
-  c.textBaseline = "middle";
-  marks.forEach(([angle, rad, deg]) => {
+  const marks = [
+    [0, "0 / 2π", "0° / 360°", 86, 0, 86],
+    [Math.PI / 2, "π/2", "90°", 0, -22, 62],
+    [Math.PI, "π", "180°", -36, 0, 64],
+    [3 * Math.PI / 2, "3π/2", "270°", 0, 24, 62],
+  ];
+  marks.forEach(([angle, rad, deg, offsetX, offsetY, labelDistance]) => {
     const mark = pointOnCircle(normalizeAngle(angle), cx, cy, radiusPx);
-    const label = pointOnCircle(normalizeAngle(angle), cx, cy, radiusPx + 48);
+    const baseLabel = pointOnCircle(normalizeAngle(angle), cx, cy, radiusPx + labelDistance);
     c.strokeStyle = "rgba(255,209,102,0.85)";
-    c.beginPath(); c.arc(mark.x, mark.y, 4, 0, TAU); c.stroke();
-    const text = [opts.showRadians ? rad : "", opts.showDegrees ? deg : ""].filter(Boolean).join(" / ");
-    if (text) { c.fillStyle = "#f8f1dc"; c.fillText(text, label.x, label.y); }
+    c.fillStyle = "rgba(255,209,102,0.35)";
+    c.beginPath(); c.arc(mark.x, mark.y, 3, 0, TAU); c.fill(); c.stroke();
+    const text = [opts.showRadians ? rad : "", opts.showDegrees ? deg : ""].filter(Boolean).join("\n");
+    if (text) drawLabel(c, text, baseLabel.x, baseLabel.y, offsetX, offsetY, "#f8f1dc");
   });
 
   if (opts.showArc) {
     c.strokeStyle = "#ffd166"; c.lineWidth = 7; c.lineCap = "round"; c.beginPath();
     c.arc(cx, cy, radiusPx + 14, 0, -physics.visualTheta, physics.theta >= 0);
     c.stroke();
+    const nearInitialPoint = physics.visualTheta < 0.25 || physics.visualTheta > TAU - 0.25;
+    const arcLabel = nearInitialPoint
+      ? pointOnCircle(Math.PI / 4, cx, cy, radiusPx + 92)
+      : pointOnCircle(physics.visualTheta / 2, cx, cy, radiusPx + 52);
+    drawLabel(c, "s = Rθ", arcLabel.x, arcLabel.y, nearInitialPoint ? 24 : 0, nearInitialPoint ? -18 : 0, "#ffd166");
   }
   if (opts.showAngle) {
     c.strokeStyle = "#8ee66b"; c.lineWidth = 3; c.beginPath();
     c.arc(cx, cy, 54, 0, -physics.visualTheta, physics.theta >= 0);
-    c.stroke(); c.fillStyle = "#8ee66b"; c.font = "800 18px Segoe UI"; c.fillText("θ", cx + 48, cy - 14);
+    c.stroke();
+    drawLabel(c, "θ", cx, cy, 70, -38, "#8ee66b");
   }
   if (opts.showRadius) {
     c.strokeStyle = "rgba(56,217,255,0.72)"; c.lineWidth = 3; c.beginPath(); c.moveTo(cx, cy); c.lineTo(particle.x, particle.y); c.stroke();
   }
 
-  c.fillStyle = "#ff4fa3"; c.strokeStyle = "#f8f1dc"; c.lineWidth = 3; c.beginPath(); c.arc(particle.x, particle.y, 13, 0, TAU); c.fill(); c.stroke();
+  c.fillStyle = "#ff4fa3"; c.strokeStyle = "#f8f1dc"; c.lineWidth = 3; c.beginPath(); c.arc(particle.x, particle.y, 16, 0, TAU); c.fill(); c.stroke();
+  drawLabel(c, "posição atual", particle.x, particle.y, 0, 38, "#ff4fa3");
 
-  const scale = 16 * p.vectorScale;
+  const scale = (14 * p.vectorScale) / Math.sqrt(state.zoom);
   const tangentSign = physics.omega >= 0 ? 1 : -1;
   const tangent = { x: -Math.sin(physics.visualTheta) * tangentSign, y: -Math.cos(physics.visualTheta) * tangentSign };
   const inward = { x: (cx - particle.x) / radiusPx, y: (cy - particle.y) / radiusPx };
   const atSign = Math.sign(physics.at || 0);
-  const vLen = clamp(physics.speed * scale, 0, 150);
-  const acLen = clamp(physics.ac * scale * 0.35, 0, 165);
-  const atLen = clamp(Math.abs(physics.at) * scale, 0, 140);
+  const atZero = Math.abs(physics.at) < 1e-9;
+  const vLen = clamp(physics.speed * scale, 0, 125);
+  const acLen = clamp(physics.ac * scale * 0.32, 0, 135);
+  const atLen = atZero ? 0 : clamp(Math.abs(physics.at) * scale, 0, 115);
   const acVec = { x: inward.x * acLen, y: inward.y * acLen };
   const atVec = { x: -Math.sin(physics.visualTheta) * atSign * atLen, y: -Math.cos(physics.visualTheta) * atSign * atLen };
-  if (opts.showVelocity) drawArrow(c, particle.x, particle.y, tangent.x * vLen, tangent.y * vLen, "#38d9ff", "v");
-  if (opts.showCentripetal) drawArrow(c, particle.x, particle.y, acVec.x, acVec.y, "#ff4fa3", "ac");
-  if (opts.showTangential && atLen > 0.2) drawArrow(c, particle.x, particle.y, atVec.x, atVec.y, "#8ee66b", "at");
-  if (opts.showTotal) drawArrow(c, particle.x, particle.y, acVec.x + atVec.x, acVec.y + atVec.y, "#ff9f43", "a");
+  if (opts.showVelocity) drawVector(c, particle.x, particle.y, tangent.x * vLen, tangent.y * vLen, "#38d9ff", "v", tangent.x * 22, tangent.y * 22);
+  if (opts.showCentripetal) drawVector(c, particle.x, particle.y, acVec.x, acVec.y, "#ff4fa3", "ac", inward.y * 24, -inward.x * 24);
+  if (opts.showTangential && !atZero && atLen > 0.2) drawVector(c, particle.x, particle.y, atVec.x, atVec.y, "#8ee66b", "at", -tangent.y * 26, tangent.x * 26);
+  if (opts.showTotal && !atZero) drawVector(c, particle.x, particle.y, acVec.x + atVec.x, acVec.y + atVec.y, "#ff9f43", "a", 28, 28);
 
   setResults("particleResults", [
-    ["Tempo t", `${format(physics.t)} s`], ["Ângulo θ", `${format(physics.theta)} rad`], ["Graus", `${format(physics.degrees)}°`],
-    ["Voltas", format(physics.laps, 3)], ["Arco s", `${format(physics.arc)} m`], ["ω atual", `${format(physics.omega)} rad/s`],
+    ["Movimento atual", atZero ? "MCU" : "MCUV"], ["Tempo t", `${format(physics.t)} s`], ["θ em radianos", `${format(physics.theta)} rad`], ["θ em graus", `${format(physics.degrees)}°`],
+    ["Voltas completas", format(physics.laps, 3)], ["Arco s = Rθ", `${format(physics.arc)} m`], ["ω atual", `${format(physics.omega)} rad/s`],
     ["v = ωR", `${format(physics.speed)} m/s`], ["at = αR", `${format(physics.at)} m/s²`], ["ac = ω²R", `${format(physics.ac)} m/s²`],
-    ["Fc = m ac", `${format(physics.fc)} N`],
+    ["a total", `${format(physics.total)} m/s²`], ["Fc = m ac", `${format(physics.fc)} N`],
   ]);
-  updateParticleAlert(physics);
+  updateParticleAlert(physics, opts);
 }
 
-function updateParticleAlert(physics) {
+function updateParticleAlert(physics, opts = getToggles()) {
   const box = document.getElementById("particleAlert");
   const alphaZero = Math.abs(state.particle.alpha) < 1e-9;
   const omegaZero = Math.abs(state.particle.omega0) < 1e-9;
-  if (alphaZero && Math.abs(physics.omega) > 1e-9) box.textContent = "Mesmo com aceleração angular zero, existe aceleração centrípeta porque a direção da velocidade muda.";
+  const atZero = Math.abs(physics.at) < 1e-9;
+  if (alphaZero && opts.showTotal && atZero && Math.abs(physics.ac) > 1e-9) box.textContent = "Como α = 0, não há aceleração tangencial. No MCU, a aceleração total coincide com a centrípeta.";
+  else if (alphaZero) box.textContent = "Como α = 0, não há aceleração tangencial.";
   else if (omegaZero && Math.abs(state.particle.alpha) > 1e-9 && physics.t < 0.1) box.textContent = "No instante inicial, a centrípeta é zero, mas a aceleração tangencial já existe.";
   else box.textContent = "α gera at; ω gera ac. Elas não são a mesma aceleração.";
 }
